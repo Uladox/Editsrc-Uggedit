@@ -4,6 +4,50 @@ use File::Temp;
 
 package Editsrc::Uggedit {
 
+    # Code that allows shared variables
+    sub uncomment($arg) {
+	my @processedComments = $arg.lines.map: {
+	    m:s/^[.'!'\s]?(.*)/[*-1];
+        }
+	return @processedComments.join("\n") ~ "\n";
+    }
+
+    sub reverseEscape($arg) {
+	return $arg.subst(/"\\"/, "\\\\", :g).subst(/"\t"/, "\\t", :g).subst(/"\n"/, "\\n", :g).subst(/'"'/, '\\"', :g);
+    }
+
+    sub unreverseEscape($arg) {
+		my regex oddSlash { '\\'['\\\\']* };
+		return $arg.subst(/"\\\""/, '"', :g).subst(/<!after <oddSlash>>"\\n"/, "\n", :g).subst(/<!after <oddSlash>>"\\t"/, "\t", :g).subst(/"\\\\"/, "\\", :g);
+    }
+
+    sub dollarEscape($arg) {
+	return $arg.subst(/'$'/, '\\$', :g);
+    }
+
+    my $reverseEscapeCode-Perl5 = Q:to/END/;
+    sub uggedit_reverseEscape {
+	my $arg = shift;
+	$arg =~ s/\\/\\\\/ig;
+	$arg =~ s/\n/\\n/ig;
+	$arg =~ s/\t/\\t/ig;
+	$arg =~ s/\"/\\\"/ig;
+	return $arg;
+    }
+    END
+
+    my $reverseEscapeCode-Perl6 = Q:to/END/;
+    sub uggedit-reverseEscape($arg) {
+	return $arg.subst(/"\\"/, "\\\\", :g).subst(/"\t"/, "\\t", :g).subst(/"\n"/, "\\n", :g).subst(/'"'/, '\\"', :g);
+    }
+    END
+
+    my $reverseEscapeCode-Python = Q:to/END/;
+    def uggedit_reverseEscape(arg):
+      return arg.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t").replace("\"", "\\\"")
+    END
+
+# The editor, is the main part of Uggedit
 class Editsrc::Uggedit::Editor {
     # Rewritable strings
     has $.editLineName is rw;
@@ -70,93 +114,50 @@ class Editsrc::Uggedit::Editor {
 	%.sharedVars = ();
     }
 
-    # Code that allows shared variables
-    method !uncomment($arg) {
-	my @processedComments = $arg.lines.map: {
-	    m:s/^[.'!'\s]?(.*)/[*-1];
-        }
-	return @processedComments.join("\n") ~ "\n";
-    }
-
-    method !reverseEscape($arg) {
-	return $arg.subst(/"\\"/, "\\\\", :g).subst(/"\t"/, "\\t", :g).subst(/"\n"/, "\\n", :g).subst(/'"'/, '\\"', :g);
-    }
-
-    method !unreverseEscape($arg) {
-		my regex oddSlash { '\\'['\\\\']* };
-		return $arg.subst(/"\\\""/, '"', :g).subst(/<!after <oddSlash>>"\\n"/, "\n", :g).subst(/<!after <oddSlash>>"\\t"/, "\t", :g).subst(/"\\\\"/, "\\", :g);
-    }
-
-    method !dollarEscape($arg) {
-	return $arg.subst(/'$'/, '\\$', :g);
-    }
-
-    has $!reverseEscapeCode-Perl5 = Q:to/END/;
-    sub uggedit_reverseEscape {
-	my $arg = shift;
-	$arg =~ s/\\/\\\\/ig;
-	$arg =~ s/\n/\\n/ig;
-	$arg =~ s/\t/\\t/ig;
-	$arg =~ s/\"/\\\"/ig;
-	return $arg;
-    }
-    END
-
-    has $!reverseEscapeCode-Perl6 = Q:to/END/;
-    sub uggedit-reverseEscape($arg) {
-	return $arg.subst(/"\\"/, "\\\\", :g).subst(/"\t"/, "\\t", :g).subst(/"\n"/, "\\n", :g).subst(/'"'/, '\\"', :g);
-    }
-    END
-
-    has $!reverseEscapeCode-Python = Q:to/END/;
-    def uggedit_reverseEscape(arg):
-      return arg.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t").replace("\"", "\\\"")
-    END
-
     # Sadly it is impossible to make this code cleaner due to the complexity
     # of lanugages. I have tried quite a bit. You have been warned.
     has %.forLanguage = (
 	'perl' => sub ($varFile) {
-	    my $codeInit = $!reverseEscapeCode-Perl5;
+	    my $codeInit = $reverseEscapeCode-Perl5;
 	    my $codeExit =
 	    qq[open(my \$uggeditFile, '>', '$varFile') or
 	       die 'Failed to open file to save shared varibles';\n];
 	    for %!sharedVars.kv -> $key, $value {
 		$codeInit ~= "my \$$key = " ~ '"' ~
-		    self!dollarEscape(self!reverseEscape($value)) ~ "\";\n";
+		    dollarEscape(reverseEscape($value)) ~ "\";\n";
 		$codeExit ~=
 		  qq[print \$uggeditFile "$key" . ' ' . uggedit_reverseEscape(\$$key) . "\\n";\n];
 	    }
 	    $codeExit ~= 'close $uggeditFile';
 	    #print $!currentField;
 	    #exit;
-	    return $codeInit ~ self!uncomment($!currentField) ~ $codeExit;
+	    return $codeInit ~ uncomment($!currentField) ~ $codeExit;
 	},
 	'perl6' => sub ($varFile) {
-	    my $codeInit = $!reverseEscapeCode-Perl6;
+	    my $codeInit = $reverseEscapeCode-Perl6;
 	    my $codeExit =
 	    qq[my \$uggeditFile = open('$varFile', :w) or
 	       die 'Failed to open file to save shared varibles';\n];
 	    for %!sharedVars.kv -> $key, $value {
 		$codeInit ~= "my \$$key = " ~ '"' ~
-		    self!dollarEscape(self!reverseEscape($value)) ~ "\";\n";
+		    dollarEscape(reverseEscape($value)) ~ "\";\n";
 		$codeExit ~=
 		  qq[\$uggeditFile.print("$key" ~ ' ' ~ uggedit-reverseEscape(\$$key) ~ "\\n");\n];
 	    }
 	    $codeExit ~= 'close $uggeditFile';
-	    return $codeInit ~ self!uncomment($!currentField) ~ $codeExit;
+	    return $codeInit ~ uncomment($!currentField) ~ $codeExit;
 	},
 	'python' => sub ($varFile) {
-	    my $codeInit = $!reverseEscapeCode-Python;
+	    my $codeInit = $reverseEscapeCode-Python;
 	    my $codeExit = "uggeditFile = open('$varFile', 'w')\n";
 	    for %!sharedVars.kv -> $key, $value {
 		$codeInit ~= "$key = " ~ '"' ~
-		    self!reverseEscape($value) ~ "\"\n";
+		    reverseEscape($value) ~ "\"\n";
 		$codeExit ~=
 		    "uggeditFile.write('$key' + ' ' + uggedit_reverseEscape($key) + \"\\n\")\n"; 
 	    }
 	    $codeExit ~= 'uggeditFile.close' ~ "\n";
-	    return $codeInit ~ self!uncomment($!currentField) ~ $codeExit;
+	    return $codeInit ~ uncomment($!currentField) ~ $codeExit;
 	},
     );
 
@@ -176,7 +177,7 @@ class Editsrc::Uggedit::Editor {
 		    my ($readVarName, $readVarValue) =
 		        split(' ', $varFileLine, 2);
 		    %!sharedVars{$readVarName} = 
-			self!unreverseEscape($readVarValue);
+			unreverseEscape($readVarValue);
 		}
 		$!lastField =  %!sharedVars{'field'};
 		close $varHandle;
@@ -187,8 +188,8 @@ class Editsrc::Uggedit::Editor {
     method !endParen {
 	$!inField      = False;
 	$!printField   = False;
-	$!captureField = False if not $!ignoreEditLine;
-	$!captureNonField = False if not $!ignoreEditLine;
+	# $!captureField = False if not $!ignoreEditLine;
+	# $!captureNonField = False if not $!ignoreEditLine;
 	self!execComment if $!isCode;
 	if $!addText {
 	    if $!addTextUnique {
@@ -199,8 +200,8 @@ class Editsrc::Uggedit::Editor {
 	    }
 	    $!addText = False if $!addTextOnce;
 	}
-	$!capturedContents ~= $!currentbuffer if $!captureNonField;
-	$!capturedContents ~= $!currentField if $!captureField;
+	$!capturedContents ~= $!lastbuffer if $!captureNonField;
+	$!capturedContents ~= $!lastField if $!captureField;
 	$!fileContents ~= $!lastbuffer;
 	$!fileContents ~= $!lastField;
 	$!lastField = $!currentField;
@@ -256,7 +257,7 @@ class Editsrc::Uggedit::Editor {
     }
 
     # Reads comments starting with 
-    method execFile {
+    method edit {
 	self.reset();
 	die "Undefined file in Uggedit" if  not defined $!editFile;
 	my $editFileHandle = open $!editFile, :r;
@@ -312,17 +313,5 @@ class Editsrc::Uggedit::Editor {
     }
 }
 
- # my $defaultUggedit = Uggedit.new(
- #     editLineName => 'src_k',
- #     editFile => 'test.qwt',
- #     ignoreEditLine => True,
- #     captureField => True,
- #     captureNonField => True,
- #     addText => True,
- #     textToAdd => "#\n",
- # );
-    
- # print $defaultUggedit.execFile();
- 
 }
 
