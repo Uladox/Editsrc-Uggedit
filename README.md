@@ -1,4 +1,4 @@
-# Editscr-Uggedit
+# Editsrc-Uggedit
 >"The obvious in-source Perl6 based solution to avoid repetion in modifing text by using embedded code with your languages of choice, or just scanning using a perl6 module."
 aka
 >"That one thing that does all that crazy language stuff an things."
