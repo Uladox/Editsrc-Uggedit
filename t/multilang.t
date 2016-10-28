@@ -16,4 +16,4 @@ use Editsrc::Uggedit;
       'Can run code';
 }
 
-done;
+done-testing;
