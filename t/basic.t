@@ -27,4 +27,4 @@ use Editsrc::Uggedit;
       'Able to run perl 6 code';
 }
 
-done;
+done-testing;
