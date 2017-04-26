@@ -1,5 +1,6 @@
 {
     "name"        : "Editsrc::Uggedit",
+    "license"     : "Artistic-2.0",
     "version"     : "*",
     "author"      : "Uladox <uladoxiental@gmail.com>",
     "description" : "Uggh I need to edit a text file in some copy paste way...wait, perl modules!",
